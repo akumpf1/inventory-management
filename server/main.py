@@ -304,6 +304,64 @@ def get_monthly_trends():
     result.sort(key=lambda x: x['month'])
     return result
 
+# ─── Tasks ────────────────────────────────────────────────────────────────────
+# In-memory task store (resets on server restart — matches the demo data model)
+_tasks_store: list = []
+_task_id_counter: int = 1000  # start above mock-task IDs (1-10 range)
+
+class TaskCreate(BaseModel):
+    title: str
+    priority: str = "medium"
+    dueDate: str
+    status: str = "pending"
+
+class Task(BaseModel):
+    id: int
+    title: str
+    priority: str
+    dueDate: str
+    status: str
+
+@app.get("/api/tasks", response_model=List[Task])
+def get_tasks():
+    """Return all API-created tasks."""
+    return _tasks_store
+
+@app.post("/api/tasks", response_model=Task, status_code=201)
+def create_task(task: TaskCreate):
+    """Create a new task."""
+    global _task_id_counter
+    _task_id_counter += 1
+    new_task = {
+        "id": _task_id_counter,
+        "title": task.title,
+        "priority": task.priority,
+        "dueDate": task.dueDate,
+        "status": task.status,
+    }
+    _tasks_store.append(new_task)
+    return new_task
+
+@app.patch("/api/tasks/{task_id}", response_model=Task)
+def toggle_task(task_id: int):
+    """Toggle a task between pending and completed."""
+    for task in _tasks_store:
+        if task["id"] == task_id:
+            task["status"] = "completed" if task["status"] == "pending" else "pending"
+            return task
+    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+@app.delete("/api/tasks/{task_id}")
+def delete_task(task_id: int):
+    """Delete a task by ID."""
+    global _tasks_store
+    original_len = len(_tasks_store)
+    _tasks_store = [t for t in _tasks_store if t["id"] != task_id]
+    if len(_tasks_store) == original_len:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return {"deleted": task_id}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
